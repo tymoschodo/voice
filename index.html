@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice FX Pedalboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #111118;
+    --bg3: #1a1a24;
+    --border: #2a2a3a;
+    --border-bright: #3a3a5a;
+    --text: #e8e8f0;
+    --text-muted: #6a6a8a;
+    --text-dim: #3a3a5a;
+    --accent: #7c6dfa;
+    --accent-dim: #2a2450;
+    --accent-glow: rgba(124,109,250,0.15);
+    --green: #22c97a;
+    --green-dim: #0a2e1c;
+    --red: #f05060;
+    --red-dim: #2e0a10;
+    --amber: #f0a030;
+    --amber-dim: #2e1f05;
+    --cyan: #30d0e0;
+    --cyan-dim: #052e33;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ─── scanline overlay ─────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  /* ─── tab bar ──────────────────────────────────────── */
+  #tabbar {
+    display: flex; align-items: center; gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 0 1.5rem;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .app-title {
+    font-family: var(--mono);
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-right: 2rem;
+    padding: 1rem 0;
+    white-space: nowrap;
+  }
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: 11px; font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: none; border: none;
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ─── tab panels ───────────────────────────────────── */
+  .tab-panel { display: none; padding: 2rem 1.5rem; max-width: 860px; }
+  .tab-panel.active { display: block; }
+
+  /* ─── section headers ──────────────────────────────── */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+  }
+
+  /* ─── status / mic bar ─────────────────────────────── */
+  #mic-bar {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 1.5rem;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border-bright);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .status-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  #status-text { font-family: var(--mono); font-size: 12px; color: var(--text-muted); flex: 1; }
+
+  /* ─── start button ─────────────────────────────────── */
+  #start-btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--accent-dim); color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px; padding: 8px 16px;
+    cursor: pointer; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  #start-btn:hover { background: var(--accent); color: #fff; }
+  #start-btn.live { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+  #start-btn.live:hover { background: var(--green); color: #000; }
+  #start-btn.err { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+
+  /* ─── volume row ───────────────────────────────────── */
+  .vol-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 1.75rem;
+  }
+  .vol-row label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .vol-row .val { font-family: var(--mono); font-size: 11px; color: var(--text); min-width: 36px; }
+
+  /* ─── pedals grid ──────────────────────────────────── */
+  #pedals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 2rem;
+  }
+
+  .pedal {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .pedal.on {
+    border-color: var(--accent);
+    box-shadow: 0 0 16px var(--accent-glow);
+  }
+  .pedal.binary.on {
+    border-color: var(--cyan);
+    box-shadow: 0 0 16px rgba(48,208,224,0.12);
+  }
+
+  .pedal-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 8px; margin-bottom: 6px;
+  }
+  .pedal-name {
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    color: var(--text); line-height: 1.3;
+  }
+  .pedal.on .pedal-name { color: var(--accent); }
+  .pedal.binary.on .pedal-name { color: var(--cyan); }
+  .pedal-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4; }
+
+  /* toggle switch */
+  .tog { position: relative; width: 34px; height: 18px; flex-shrink: 0; cursor: pointer; }
+  .tog input { display: none; }
+  .tog-track {
+    position: absolute; inset: 0; border-radius: 9px;
+    background: var(--border-bright); transition: background 0.2s;
+  }
+  .tog input:checked + .tog-track { background: var(--accent); }
+  .pedal.binary .tog input:checked + .tog-track { background: var(--cyan); }
+  .tog-thumb {
+    position: absolute; top: 3px; left: 3px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; transition: transform 0.2s; pointer-events: none;
+  }
+  .tog input:checked ~ .tog-thumb { transform: translateX(16px); }
+
+  /* knobs */
+  .knob { margin-top: 8px; }
+  .knob-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .knob-label span:first-child { font-size: 11px; color: var(--text-muted); }
+  .knob-label span:last-child { font-family: var(--mono); font-size: 11px; color: var(--text); }
+
+  input[type=range] {
+    width: 100%; height: 4px; appearance: none;
+    background: var(--border-bright); border-radius: 2px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: none;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: none;
+  }
+  .pedal.binary input[type=range]::-webkit-slider-thumb { background: var(--cyan); }
+  .pedal.binary input[type=range]::-moz-range-thumb { background: var(--cyan); }
+
+  /* ─── chain display ─────────────────────────────────── */
+  #chain-wrap { margin-bottom: 2rem; }
+  #chain-display {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-family: var(--mono); font-size: 11px;
+    min-height: 36px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  }
+  .chain-tag {
+    background: var(--accent-dim); color: var(--accent);
+    padding: 3px 8px; border-radius: 4px; font-size: 10px;
+    letter-spacing: 0.05em;
+  }
+  .chain-tag.binary-tag { background: var(--cyan-dim); color: var(--cyan); }
+  .chain-arr { color: var(--text-dim); }
+  #chain-empty { color: var(--text-dim); }
+
+  /* ─── VU meter ──────────────────────────────────────── */
+  #vu-wrap { margin-bottom: 2rem; }
+  #vu-bar-bg {
+    height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden;
+  }
+  #vu-bar {
+    height: 100%; width: 0%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--green) 0%, var(--amber) 75%, var(--red) 100%);
+    transition: width 0.05s;
+  }
+
+  /* ─── STREAM tab ────────────────────────────────────── */
+  .stream-info {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 24px; margin-bottom: 1.5rem;
+  }
+  .stream-info h3 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    color: var(--text); margin-bottom: 8px;
+  }
+  .stream-info p { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 8px; }
+  .stream-info p:last-child { margin-bottom: 0; }
+  .stream-info code {
+    font-family: var(--mono); font-size: 11px;
+    background: var(--bg3); border: 1px solid var(--border);
+    padding: 2px 6px; border-radius: 3px; color: var(--accent);
+  }
+  .stream-info ol { padding-left: 1.25rem; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
+
+  .stream-how {
+    background: var(--bg2); border: 1px solid var(--border-bright);
+    border-radius: 10px; padding: 20px 24px; margin-bottom: 1.5rem;
+  }
+  .stream-how h3 {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    color: var(--amber); margin-bottom: 12px;
+  }
+  .stream-how p { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 6px; }
+
+  .stream-actions {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 1.5rem;
+  }
+  .stream-btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    border-radius: 6px; padding: 10px 18px;
+    cursor: pointer; transition: all 0.15s; border: 1px solid;
+  }
+  .stream-btn.primary {
+    background: var(--accent-dim); color: var(--accent); border-color: var(--accent);
+  }
+  .stream-btn.primary:hover { background: var(--accent); color: #fff; }
+  .stream-btn.secondary {
+    background: transparent; color: var(--text-muted); border-color: var(--border);
+  }
+  .stream-btn.secondary:hover { color: var(--text); border-color: var(--border-bright); }
+  .stream-btn.green {
+    background: var(--green-dim); color: var(--green); border-color: var(--green);
+  }
+  .stream-btn.green:hover { background: var(--green); color: #000; }
+  .stream-btn.red {
+    background: var(--red-dim); color: var(--red); border-color: var(--red);
+  }
+  .stream-btn.red:hover { background: var(--red); color: #fff; }
+
+  /* ─── LISTENER panel ────────────────────────────────── */
+  #listener-panel {
+    display: none;
+    position: fixed; inset: 0;
+    background: var(--bg);
+    z-index: 1000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+  }
+  #listener-panel.active { display: flex; }
+  .listener-title {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--cyan); margin-bottom: 0.5rem;
+  }
+  .listener-sub {
+    font-size: 13px; color: var(--text-muted); margin-bottom: 2rem; max-width: 340px;
+  }
+  #listener-status {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 20px;
+    color: var(--text-muted); margin-bottom: 1.5rem; max-width: 400px; width: 100%;
+  }
+  #listener-vis {
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 60px; margin-bottom: 2rem;
+  }
+  .vis-bar {
+    width: 6px; border-radius: 3px;
+    background: var(--cyan);
+    height: 4px;
+    transition: height 0.08s;
+    opacity: 0.7;
+  }
+  #listener-close {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--red-dim); color: var(--red);
+    border: 1px solid var(--red); border-radius: 6px;
+    padding: 10px 20px; cursor: pointer;
+  }
+  #listener-close:hover { background: var(--red); color: #fff; }
+
+  /* ─── binary visualizer ─────────────────────────────── */
+  #bin-vis {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--cyan); letter-spacing: 0.05em;
+    height: 18px; overflow: hidden;
+    margin-bottom: 1rem; opacity: 0;
+    transition: opacity 0.3s;
+    word-break: break-all;
+  }
+  #bin-vis.active { opacity: 1; }
+
+  /* ─── scrollbar ─────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ TAB BAR ════════════════════════════════════════ -->
+<div id="tabbar">
+  <span class="app-title">⬡ Voice FX</span>
+  <button class="tab-btn active" onclick="showTab('perform')">Performer</button>
+  <button class="tab-btn" onclick="showTab('stream')">Stream / Listener</button>
+</div>
+
+<!-- ═══ PERFORMER TAB ══════════════════════════════════ -->
+<div class="tab-panel active" id="tab-perform">
+
+  <div id="mic-bar">
+    <div class="status-dot" id="live-dot"></div>
+    <span id="status-text" style="font-family:var(--mono);font-size:12px;color:var(--text-muted);flex:1">Not started — click Start to request microphone access</span>
+    <button id="start-btn" onclick="initAudio()">▶ Start</button>
+  </div>
+
+  <div class="vol-row">
+    <label>Output vol</label>
+    <input type="range" min="0" max="1" step="0.01" value="0.8" id="master-vol"
+      style="flex:1"
+      oninput="setMasterVol(this.value); document.getElementById('vol-val').textContent=Math.round(this.value*100)+'%'">
+    <span class="val" id="vol-val">80%</span>
+  </div>
+
+  <div id="vu-wrap">
+    <div class="section-label">Input level</div>
+    <div id="vu-bar-bg"><div id="vu-bar"></div></div>
+  </div>
+
+  <div id="bin-vis">0110 1001 0011 0100</div>
+
+  <div class="section-label">Effects pedals</div>
+  <div id="pedals-grid"></div>
+
+  <div id="chain-wrap">
+    <div class="section-label">Active chain</div>
+    <div id="chain-display"><span id="chain-empty" style="color:var(--text-dim)">No effects active — toggle pedals above</span></div>
+  </div>
+
+</div>
+
+<!-- ═══ STREAM TAB ══════════════════════════════════════ -->
+<div class="tab-panel" id="tab-stream">
+
+  <div class="stream-how">
+    <h3>⬡ Two-device setup — no feedback loop</h3>
+    <p>The <strong>Performer</strong> tab captures and processes your microphone. The <strong>Listener</strong> tab plays audio through the speaker — open it on a <em>separate device</em> (phone, tablet, another laptop) so the mic and speaker are physically apart.</p>
+    <p>Audio is relayed between devices using a simple peer-to-peer WebRTC connection via a public signalling relay.</p>
+  </div>
+
+  <div class="stream-info">
+    <h3>How to connect</h3>
+    <ol>
+      <li>On the <strong>Performer</strong> device: click <code>Start Broadcast</code> and copy the 6-digit Room Code.</li>
+      <li>On the <strong>Listener</strong> device: open this same HTML file in a browser, go to Stream / Listener tab, enter the Room Code and click <code>Join as Listener</code>.</li>
+      <li>The listener opens a fullscreen audio-only player. Processed audio streams live — no mic on the listener device needed.</li>
+      <li>Or use the <code>Open Listener Window</code> button below to open a second tab on the same machine (only works if they're on different audio devices or headphones are plugged into the performer device).</li>
+    </ol>
+  </div>
+
+  <div class="stream-actions">
+    <button class="stream-btn primary" onclick="startBroadcast()" id="broadcast-btn">⬡ Start broadcast</button>
+    <button class="stream-btn secondary" onclick="openListenerWindow()">↗ Open listener window</button>
+  </div>
+
+  <div id="broadcast-status" style="font-family:var(--mono);font-size:12px;color:var(--text-muted);margin-bottom:1.5rem;display:none"></div>
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px 24px;">
+    <div class="section-label" style="margin-bottom:12px">Join as listener</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input id="room-input" type="text" placeholder="Enter 6-digit room code"
+        style="font-family:var(--mono);font-size:13px;background:var(--bg3);border:1px solid var(--border-bright);border-radius:6px;padding:9px 14px;color:var(--text);outline:none;width:220px;letter-spacing:0.1em"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6)">
+      <button class="stream-btn green" onclick="joinAsListener()">▶ Join as listener</button>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin-top:10px;font-family:var(--mono)">
+      The listener panel opens fullscreen — speaker only, no mic.
+    </p>
+  </div>
+
+</div>
+
+<!-- ═══ LISTENER OVERLAY ════════════════════════════════ -->
+<div id="listener-panel">
+  <div class="listener-title">⬡ Listener mode</div>
+  <div class="listener-sub">Audio-only output. Point speakers outward. No microphone is active on this device.</div>
+  <div id="listener-status">Connecting to room...</div>
+  <div id="listener-vis">
+    <div class="vis-bar" id="vb0"></div>
+    <div class="vis-bar" id="vb1"></div>
+    <div class="vis-bar" id="vb2"></div>
+    <div class="vis-bar" id="vb3"></div>
+    <div class="vis-bar" id="vb4"></div>
+    <div class="vis-bar" id="vb5"></div>
+    <div class="vis-bar" id="vb6"></div>
+    <div class="vis-bar" id="vb7"></div>
+    <div class="vis-bar" id="vb8"></div>
+    <div class="vis-bar" id="vb9"></div>
+    <div class="vis-bar" id="vb10"></div>
+    <div class="vis-bar" id="vb11"></div>
+  </div>
+  <audio id="listener-audio" autoplay playsinline style="display:none"></audio>
+  <button id="listener-close" onclick="closeListener()">✕ Close listener</button>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   TAB SWITCHING
+═══════════════════════════════════════════════════════ */
+function showTab(id) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+/* ═══════════════════════════════════════════════════════
+   PEDAL DEFINITIONS
+═══════════════════════════════════════════════════════ */
+const PEDALS = [
+  {
+    id: 'gender', name: 'Gender swap', binary: false,
+    desc: 'Pitch-shifts down to produce a male-sounding voice',
+    params: [
+      { id: 'pitch', label: 'Pitch shift', min: -12, max: -1, step: 1, value: -6, unit: 'st' },
+      { id: 'mix', label: 'Dry / wet', min: 0, max: 1, step: 0.01, value: 1, pct: true }
+    ]
+  },
+  {
+    id: 'helium', name: 'Helium', binary: false,
+    desc: 'Chipmunk / helium pitch shift upward',
+    params: [
+      { id: 'pitch', label: 'Pitch shift', min: 2, max: 12, step: 1, value: 7, unit: 'st' }
+    ]
+  },
+  {
+    id: 'doubler', name: 'Voice doubler', binary: false,
+    desc: 'Adds a slightly detuned second voice layer',
+    params: [
+      { id: 'detune', label: 'Detune', min: 10, max: 200, step: 5, value: 40, unit: 'ct' },
+      { id: 'mix', label: 'Dry / wet', min: 0, max: 1, step: 0.01, value: 0.7, pct: true }
+    ]
+  },
+  {
+    id: 'harmony', name: 'Harmony', binary: false,
+    desc: 'Adds a harmony interval layer above or below',
+    params: [
+      { id: 'interval', label: 'Interval', min: -12, max: 12, step: 1, value: 5, unit: 'st' },
+      { id: 'mix', label: 'Dry / wet', min: 0, max: 1, step: 0.01, value: 0.55, pct: true }
+    ]
+  },
+  {
+    id: 'robot', name: 'Robot', binary: false,
+    desc: 'Ring modulation produces a mechanical tone',
+    params: [
+      { id: 'freq', label: 'Mod frequency', min: 30, max: 600, step: 5, value: 120, unit: 'Hz' },
+      { id: 'mix', label: 'Dry / wet', min: 0, max: 1, step: 0.01, value: 0.85, pct: true }
+    ]
+  },
+  {
+    id: 'telephone', name: 'Telephone', binary: false,
+    desc: 'Band-pass (300–3400 Hz) + distortion crackle',
+    params: [
+      { id: 'grit', label: 'Grit / crackle', min: 0, max: 1, step: 0.01, value: 0.3, pct: true }
+    ]
+  },
+  {
+    id: 'demon', name: 'Demon', binary: false,
+    desc: 'Heavy pitch drop + growling low-frequency layer',
+    params: [
+      { id: 'pitch', label: 'Pitch shift', min: -20, max: -6, step: 1, value: -10, unit: 'st' },
+      { id: 'growl', label: 'Growl mix', min: 0, max: 1, step: 0.01, value: 0.4, pct: true }
+    ]
+  },
+  {
+    id: 'reverb', name: 'Cave reverb', binary: false,
+    desc: 'Long convolution reverb — large space feel',
+    params: [
+      { id: 'decay', label: 'Decay time', min: 0.5, max: 6, step: 0.1, value: 2.5, unit: 's' },
+      { id: 'mix', label: 'Dry / wet', min: 0, max: 1, step: 0.01, value: 0.45, pct: true }
+    ]
+  },
+  {
+    id: 'binary', name: 'Binary voice', binary: true,
+    desc: 'Destroys speech — only rhythm and pitch survive as gated bit-crusher noise bursts',
+    params: [
+      { id: 'gate_speed', label: 'Gate rate', min: 4, max: 64, step: 2, value: 24, unit: 'Hz' },
+      { id: 'crush', label: 'Bit crush depth', min: 1, max: 8, step: 1, value: 3, unit: 'bit' },
+      { id: 'mix', label: 'Dry / wet', min: 0, max: 1, step: 0.01, value: 0.95, pct: true }
+    ]
+  }
+];
+
+const state = { on: {}, params: {} };
+PEDALS.forEach(p => {
+  state.on[p.id] = false;
+  state.params[p.id] = {};
+  p.params.forEach(pr => state.params[p.id][pr.id] = pr.value);
+});
+
+/* ═══════════════════════════════════════════════════════
+   RENDER PEDALS
+═══════════════════════════════════════════════════════ */
+function renderPedals() {
+  document.getElementById('pedals-grid').innerHTML = PEDALS.map(p => `
+    <div class="pedal${p.binary ? ' binary' : ''}${state.on[p.id] ? ' on' : ''}" id="pedal-${p.id}">
+      <div class="pedal-head">
+        <span class="pedal-name">${p.name}</span>
+        <label class="tog" title="Toggle ${p.name}">
+          <input type="checkbox" ${state.on[p.id] ? 'checked' : ''} onchange="togglePedal('${p.id}',this.checked)">
+          <div class="tog-track"></div>
+          <div class="tog-thumb"></div>
+        </label>
+      </div>
+      <div class="pedal-desc">${p.desc}</div>
+      ${p.params.map(pr => `
+        <div class="knob">
+          <div class="knob-label">
+            <span>${pr.label}</span>
+            <span id="kv-${p.id}-${pr.id}">${pr.pct ? Math.round(state.params[p.id][pr.id]*100)+'%' : state.params[p.id][pr.id]+(pr.unit||'')}</span>
+          </div>
+          <input type="range" min="${pr.min}" max="${pr.max}" step="${pr.step}" value="${state.params[p.id][pr.id]}"
+            oninput="updateParam('${p.id}','${pr.id}',parseFloat(this.value),${pr.pct||false},'${pr.unit||''}')">
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function togglePedal(id, on) {
+  state.on[id] = on;
+  const el = document.getElementById('pedal-' + id);
+  const p = PEDALS.find(x => x.id === id);
+  el.className = 'pedal' + (p.binary ? ' binary' : '') + (on ? ' on' : '');
+  updateChain();
+  if (audioCtx) rebuildChain();
+}
+
+function updateParam(pedal, param, val, isPct, unit) {
+  state.params[pedal][param] = val;
+  document.getElementById('kv-' + pedal + '-' + param).textContent =
+    isPct ? Math.round(val * 100) + '%' : val + unit;
+  if (audioCtx) liveUpdateParam(pedal, param, val);
+}
+
+function updateChain() {
+  const active = PEDALS.filter(p => state.on[p.id]);
+  const el = document.getElementById('chain-display');
+  if (active.length === 0) {
+    el.innerHTML = '<span id="chain-empty" style="color:var(--text-dim)">No effects active — toggle pedals above</span>';
+    return;
+  }
+  el.innerHTML = active.map((p, i) =>
+    `<span class="chain-tag${p.binary ? ' binary-tag' : ''}">${p.name}</span>${i < active.length - 1 ? '<span class="chain-arr">→</span>' : ''}`
+  ).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   AUDIO ENGINE
+═══════════════════════════════════════════════════════ */
+let audioCtx = null, sourceNode = null, masterGain = null;
+let analyser = null, animFrame = null;
+let stream = null, nodes = {};
+let processedStream = null;
+
+async function initAudio() {
+  const btn = document.getElementById('start-btn');
+  if (audioCtx) { stopAudio(); return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      video: false
+    });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    sourceNode = audioCtx.createMediaStreamSource(stream);
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = parseFloat(document.getElementById('master-vol').value);
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    masterGain.connect(analyser);
+    analyser.connect(audioCtx.destination);
+
+    // expose processed stream for WebRTC
+    const dest = audioCtx.createMediaStreamDestination();
+    masterGain.connect(dest);
+    processedStream = dest.stream;
+
+    rebuildChain();
+    startVU();
+
+    btn.className = 'live';
+    btn.textContent = '■ Stop';
+    document.getElementById('live-dot').className = 'status-dot live';
+    document.getElementById('status-text').textContent = 'Mic active — speak into the microphone';
+  } catch (e) {
+    btn.className = 'err';
+    btn.textContent = 'Error';
+    document.getElementById('status-text').textContent = 'Mic denied: ' + e.message;
+    document.getElementById('live-dot').className = 'status-dot error';
+  }
+}
+
+function stopAudio() {
+  cancelAnimationFrame(animFrame);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  sourceNode = null; masterGain = null; nodes = {}; processedStream = null;
+  document.getElementById('start-btn').className = '';
+  document.getElementById('start-btn').textContent = '▶ Start';
+  document.getElementById('live-dot').className = 'status-dot';
+  document.getElementById('status-text').textContent = 'Stopped';
+  document.getElementById('vu-bar').style.width = '0%';
+  document.getElementById('bin-vis').classList.remove('active');
+}
+
+function setMasterVol(v) { if (masterGain) masterGain.gain.value = parseFloat(v); }
+
+/* ─── VU meter ─────────────────────────────────────── */
+function startVU() {
+  const data = new Uint8Array(analyser.fftSize);
+  const binVis = document.getElementById('bin-vis');
+  let binTick = 0;
+  function tick() {
+    animFrame = requestAnimationFrame(tick);
+    analyser.getByteTimeDomainData(data);
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs(data[i] - 128) / 128;
+      if (v > peak) peak = v;
+    }
+    document.getElementById('vu-bar').style.width = Math.min(peak * 180, 100) + '%';
+
+    if (state.on['binary']) {
+      binTick++;
+      if (binTick % 4 === 0) {
+        binVis.classList.add('active');
+        binVis.textContent = Array.from({length: 32}, () => Math.random() > 0.5 ? '1' : '0').join(' ').match(/.{1,9}/g).join(' ');
+      }
+    } else {
+      binVis.classList.remove('active');
+    }
+  }
+  tick();
+}
+
+/* ═══════════════════════════════════════════════════════
+   EFFECT BUILDERS
+═══════════════════════════════════════════════════════ */
+function rebuildChain() {
+  if (!audioCtx || !sourceNode) return;
+  try { sourceNode.disconnect(); } catch(e) {}
+  nodes = {};
+  const active = PEDALS.filter(p => state.on[p.id]);
+  if (active.length === 0) { sourceNode.connect(masterGain); return; }
+  active.forEach(p => { nodes[p.id] = buildEffect(p.id); });
+  let prev = sourceNode;
+  active.forEach(p => {
+    if (nodes[p.id]) { nodes[p.id].connectInput(prev); prev = nodes[p.id].output; }
+  });
+  prev.connect(masterGain);
+}
+
+function liveUpdateParam(pedal, param, val) {
+  if (nodes[pedal] && nodes[pedal].update) nodes[pedal].update({ [param]: val });
+}
+
+function buildEffect(id) {
+  const p = state.params[id];
+  switch (id) {
+    case 'gender': return buildPitchShift(p.pitch, p.mix);
+    case 'helium': return buildPitchShift(p.pitch, 1);
+    case 'harmony': return buildPitchShift(p.interval, p.mix);
+    case 'demon': return buildDemon(p.pitch, p.growl);
+    case 'doubler': return buildDoubler(p.detune, p.mix);
+    case 'robot': return buildRingMod(p.freq, p.mix);
+    case 'telephone': return buildTelephone(p.grit);
+    case 'reverb': return buildReverb(p.decay, p.mix);
+    case 'binary': return buildBinary(p.gate_speed, p.crush, p.mix);
+  }
+}
+
+/* ─── Pitch shift (simple granular) ─────────────────── */
+function buildPitchShift(semitones, mix) {
+  const dryG = audioCtx.createGain();
+  const wetG = audioCtx.createGain();
+  const out = audioCtx.createGain();
+  dryG.gain.value = 1 - (mix || 1);
+  wetG.gain.value = mix || 1;
+
+  const bufLen = audioCtx.sampleRate * 0.1;
+  const ringBuf = new Float32Array(bufLen);
+  let writePos = 0;
+  const factor = Math.pow(2, semitones / 12);
+  let readPos = 0;
+
+  const proc = audioCtx.createScriptProcessor(2048, 1, 1);
+  proc.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    const outp = e.outputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++) {
+      ringBuf[writePos % bufLen] = inp[i];
+      writePos++;
+      readPos += factor;
+      const rp = readPos % bufLen;
+      const i0 = Math.floor(rp), i1 = (i0 + 1) % bufLen;
+      const frac = rp - i0;
+      outp[i] = ringBuf[i0] * (1 - frac) + ringBuf[i1] * frac;
+    }
+  };
+
+  wetG.connect(out); dryG.connect(out);
+  return {
+    connectInput(src) { src.connect(proc); proc.connect(wetG); src.connect(dryG); },
+    output: out,
+    update(p) {
+      if (p.mix !== undefined) { wetG.gain.value = p.mix; dryG.gain.value = 1 - p.mix; }
+    }
+  };
+}
+
+/* ─── Demon: pitch + growl ───────────────────────────── */
+function buildDemon(semitones, growlMix) {
+  const shift = buildPitchShift(semitones, 1);
+  const growlOsc = audioCtx.createOscillator();
+  growlOsc.type = 'sawtooth';
+  growlOsc.frequency.value = 35;
+  const growlGain = audioCtx.createGain();
+  growlGain.gain.value = growlMix * 0.3;
+  const out = audioCtx.createGain();
+  growlOsc.connect(growlGain); growlGain.connect(out);
+  shift.output.connect(out);
+  growlOsc.start();
+  return {
+    connectInput(src) { shift.connectInput(src); },
+    output: out,
+    update(p) {
+      if (p.pitch !== undefined) { /* rebuild needed for pitch change */ }
+      if (p.growl !== undefined) growlGain.gain.value = p.growl * 0.3;
+    }
+  };
+}
+
+/* ─── Doubler ────────────────────────────────────────── */
+function buildDoubler(detuneCents, mix) {
+  const dryG = audioCtx.createGain();
+  const wetG = audioCtx.createGain();
+  const out = audioCtx.createGain();
+  dryG.gain.value = 1;
+  wetG.gain.value = mix;
+
+  const proc = audioCtx.createScriptProcessor(2048, 1, 1);
+  const bufLen = audioCtx.sampleRate * 0.05;
+  const rb = new Float32Array(bufLen);
+  let wp = 0;
+  const factor = Math.pow(2, detuneCents / 1200);
+  let rp = 0;
+  proc.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    const o = e.outputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++) {
+      rb[wp % bufLen] = inp[i];
+      wp++;
+      rp += factor;
+      const p0 = rp % bufLen;
+      const i0 = Math.floor(p0), i1 = (i0 + 1) % bufLen;
+      const fr = p0 - i0;
+      o[i] = rb[i0] * (1 - fr) + rb[i1] * fr;
+    }
+  };
+
+  dryG.connect(out); wetG.connect(out);
+  return {
+    connectInput(src) { src.connect(dryG); src.connect(proc); proc.connect(wetG); },
+    output: out,
+    update(p) { if (p.mix !== undefined) wetG.gain.value = p.mix; }
+  };
+}
+
+/* ─── Ring modulator ─────────────────────────────────── */
+function buildRingMod(freq, mix) {
+  const dryG = audioCtx.createGain();
+  const wetG = audioCtx.createGain();
+  const out = audioCtx.createGain();
+  dryG.gain.value = 1 - mix;
+  wetG.gain.value = mix;
+
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine'; osc.frequency.value = freq;
+  osc.start();
+  const proc = audioCtx.createScriptProcessor(2048, 1, 1);
+  let ph = 0;
+  proc.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    const o = e.outputBuffer.getChannelData(0);
+    for (let i = 0; i < inp.length; i++) {
+      ph += (2 * Math.PI * osc.frequency.value) / audioCtx.sampleRate;
+      o[i] = inp[i] * Math.sin(ph);
+    }
+  };
+
+  dryG.connect(out); wetG.connect(out);
+  return {
+    connectInput(src) { src.connect(dryG); src.connect(proc); proc.connect(wetG); },
+    output: out,
+    update(p) {
+      if (p.freq !== undefined) osc.frequency.value = p.freq;
+      if (p.mix !== undefined) { wetG.gain.value = p.mix; dryG.gain.value = 1 - p.mix; }
+    }
+  };
+}
+
+/* ─── Telephone ──────────────────────────────────────── */
+function buildTelephone(grit) {
+  const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3400;
+  const dist = audioCtx.createWaveShaper();
+  dist.curve = makeDistCurve(grit * 250);
+  const out = audioCtx.createGain();
+  hp.connect(lp); lp.connect(dist); dist.connect(out);
+  return {
+    connectInput(src) { src.connect(hp); },
+    output: out,
+    update(p) { if (p.grit !== undefined) dist.curve = makeDistCurve(p.grit * 250); }
+  };
+}
+
+function makeDistCurve(amt) {
+  const n = 256, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    c[i] = ((Math.PI + amt) * x) / (Math.PI + amt * Math.abs(x));
+  }
+  return c;
+}
+
+/* ─── Reverb ─────────────────────────────────────────── */
+function buildReverb(decay, mix) {
+  const conv = audioCtx.createConvolver();
+  const rate = audioCtx.sampleRate;
+  const len = Math.floor(rate * decay);
+  const buf = audioCtx.createBuffer(2, len, rate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+  }
+  conv.buffer = buf;
+  const dryG = audioCtx.createGain(); dryG.gain.value = 1 - mix;
+  const wetG = audioCtx.createGain(); wetG.gain.value = mix;
+  const out = audioCtx.createGain();
+  conv.connect(wetG); wetG.connect(out); dryG.connect(out);
+  return {
+    connectInput(src) { src.connect(dryG); src.connect(conv); },
+    output: out,
+    update(p) {
+      if (p.mix !== undefined) { wetG.gain.value = p.mix; dryG.gain.value = 1 - p.mix; }
+    }
+  };
+}
+
+/* ─── Binary voice ───────────────────────────────────── */
+/*
+   Strategy:
+   1. Envelope follower detects when speech energy is present
+   2. Gate chops audio at gate_speed Hz (fast rhythmic on/off)
+   3. Bit-crusher reduces resolution to crush_bits
+   4. Ring mod at a high prime frequency completely destroys formants
+   5. Band-pass keeps only a mid-frequency band so rhythm is audible
+   6. Result: no words, only binary-like staccato clicks and tones
+*/
+function buildBinary(gateHz, crushBits, mix) {
+  const dryG = audioCtx.createGain();
+  const wetG = audioCtx.createGain();
+  const out = audioCtx.createGain();
+  dryG.gain.value = 1 - mix;
+  wetG.gain.value = mix;
+
+  const bufSize = 1024;
+  const proc = audioCtx.createScriptProcessor(bufSize, 1, 1);
+  const sr = audioCtx.sampleRate;
+
+  let gatePhase = 0;
+  let envFollower = 0;
+  const envAttack = 0.003, envRelease = 0.08;
+
+  proc.onaudioprocess = e => {
+    const inp = e.inputBuffer.getChannelData(0);
+    const o = e.outputBuffer.getChannelData(0);
+    const gh = state.params['binary'].gate_speed;
+    const bits = state.params['binary'].crush;
+    const levels = Math.pow(2, bits);
+    const ringFreq = 880;
+
+    for (let i = 0; i < inp.length; i++) {
+      // envelope follower
+      const rectified = Math.abs(inp[i]);
+      if (rectified > envFollower) {
+        envFollower += envAttack * (rectified - envFollower);
+      } else {
+        envFollower += (1 / (sr * envRelease)) * (rectified - envFollower);
+      }
+
+      // gate: square wave at gateHz
+      gatePhase += gh / sr;
+      if (gatePhase >= 1) gatePhase -= 1;
+      const gate = gatePhase < 0.5 ? 1 : 0;
+
+      // bit crush
+      let s = inp[i];
+      s = Math.round(s * levels) / levels;
+
+      // ring mod to destroy formants
+      const ringMod = Math.sin(2 * Math.PI * ringFreq * i / sr);
+      s = s * ringMod;
+
+      // gate + scale by envelope (preserves rhythm)
+      o[i] = s * gate * (0.3 + envFollower * 2.5);
+    }
+  };
+
+  // band-pass to keep it in a focused tonal range
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 1.5;
+
+  proc.connect(bp); bp.connect(wetG); wetG.connect(out); dryG.connect(out);
+
+  return {
+    connectInput(src) { src.connect(dryG); src.connect(proc); },
+    output: out,
+    update(p) {
+      if (p.mix !== undefined) { wetG.gain.value = p.mix; dryG.gain.value = 1 - p.mix; }
+    }
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   WEBRTC STREAMING
+   Uses a public STUN server + a simple BroadcastChannel
+   for same-origin (same-device) signalling, and a basic
+   WebSocket relay (public echo service) for cross-device.
+   For production use, replace with your own signalling server.
+═══════════════════════════════════════════════════════ */
+
+let peerConn = null;
+let roomCode = null;
+let sigWs = null;
+
+// Simple public signalling via a known relay
+// Uses wss://socketsbay.com/wss/v2/1/<room>/ as a free relay channel
+const SIG_BASE = 'wss://socketsbay.com/wss/v2/1/vfx-';
+
+function genRoomCode() {
+  return Array.from({length: 6}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+}
+
+async function startBroadcast() {
+  if (!processedStream) {
+    alert('Start the microphone first (Performer tab → Start button).');
+    return;
+  }
+  roomCode = genRoomCode();
+  document.getElementById('broadcast-status').style.display = 'block';
+  document.getElementById('broadcast-status').textContent = 'Room code: ' + roomCode + ' — waiting for listener…';
+  document.getElementById('broadcast-btn').textContent = '⬡ Broadcasting: ' + roomCode;
+
+  sigWs = new WebSocket(SIG_BASE + roomCode + '-performer/');
+  sigWs.onopen = () => console.log('Signalling open (broadcaster)');
+  sigWs.onmessage = async (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'answer') {
+      await peerConn.setRemoteDescription(new RTCSessionDescription(msg));
+    } else if (msg.type === 'ice-listener') {
+      try { await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
+    }
+  };
+
+  peerConn = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  processedStream.getTracks().forEach(t => peerConn.addTrack(t, processedStream));
+
+  peerConn.onicecandidate = e => {
+    if (e.candidate && sigWs.readyState === 1) {
+      sigWs.send(JSON.stringify({ type: 'ice-performer', candidate: e.candidate }));
+    }
+  };
+
+  const offer = await peerConn.createOffer();
+  await peerConn.setLocalDescription(offer);
+  sigWs.onopen = () => sigWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+  if (sigWs.readyState === 1) sigWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+}
+
+async function joinAsListener() {
+  const code = document.getElementById('room-input').value.trim();
+  if (code.length !== 6) { alert('Enter a 6-character room code.'); return; }
+  openListenerMode(code);
+}
+
+function openListenerWindow() {
+  const w = window.open(window.location.href + '#listener', '_blank');
+  if (!w) alert('Pop-up blocked — allow pop-ups for this page, or open the file in a second tab manually and use the room code method.');
+}
+
+/* ─── Listener overlay ───────────────────────────────── */
+async function openListenerMode(code) {
+  const panel = document.getElementById('listener-panel');
+  panel.classList.add('active');
+  document.getElementById('listener-status').textContent = 'Connecting to room: ' + code + '…';
+
+  const listenerSig = new WebSocket(SIG_BASE + code + '-listener/');
+  const lpc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+  lpc.ontrack = e => {
+    const audio = document.getElementById('listener-audio');
+    audio.srcObject = e.streams[0];
+    document.getElementById('listener-status').textContent = '⬡ Receiving audio from room: ' + code;
+    startListenerVis(e.streams[0]);
+  };
+
+  lpc.onicecandidate = ev => {
+    if (ev.candidate && listenerSig.readyState === 1) {
+      listenerSig.send(JSON.stringify({ type: 'ice-listener', candidate: ev.candidate }));
+    }
+  };
+
+  listenerSig.onmessage = async ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'offer') {
+      await lpc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+      const answer = await lpc.createAnswer();
+      await lpc.setLocalDescription(answer);
+      listenerSig.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+    } else if (msg.type === 'ice-performer') {
+      try { await lpc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
+    }
+  };
+
+  // If same device, use BroadcastChannel as faster fallback
+  const bc = new BroadcastChannel('vfx-' + code);
+  bc.onmessage = async ev => {
+    const msg = ev.data;
+    if (msg.type === 'offer') {
+      await lpc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+      const answer = await lpc.createAnswer();
+      await lpc.setLocalDescription(answer);
+      bc.postMessage({ type: 'answer', sdp: answer.sdp });
+    } else if (msg.type === 'ice-performer') {
+      try { await lpc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
+    }
+  };
+}
+
+function startListenerVis(stream) {
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(stream);
+  const an = ctx.createAnalyser(); an.fftSize = 64;
+  src.connect(an);
+  const data = new Uint8Array(an.frequencyBinCount);
+  const bars = Array.from({length: 12}, (_, i) => document.getElementById('vb' + i));
+  function tick() {
+    requestAnimationFrame(tick);
+    an.getByteFrequencyData(data);
+    bars.forEach((b, i) => {
+      const v = (data[Math.floor(i * data.length / 12)] / 255) * 56 + 4;
+      b.style.height = Math.round(v) + 'px';
+    });
+  }
+  tick();
+}
+
+function closeListener() {
+  document.getElementById('listener-panel').classList.remove('active');
+  const audio = document.getElementById('listener-audio');
+  if (audio.srcObject) { audio.srcObject.getTracks().forEach(t => t.stop()); audio.srcObject = null; }
+}
+
+/* ─── Hash-based auto-open listener ─────────────────── */
+if (window.location.hash === '#listener') {
+  window.addEventListener('load', () => {
+    document.getElementById('listener-panel').classList.add('active');
+    document.getElementById('listener-status').textContent = 'Enter room code below to connect…';
+    setTimeout(() => {
+      const code = prompt('Enter the 6-character room code from the performer device:');
+      if (code && code.length === 6) openListenerMode(code.toUpperCase());
+    }, 500);
+  });
+}
+
+/* ─── BroadcastChannel enhanced broadcast ───────────── */
+const _origBroadcast = startBroadcast;
+window.startBroadcast = async function() {
+  await _origBroadcast();
+  // also broadcast via BroadcastChannel for same-origin tabs
+  if (!roomCode) return;
+  const bc = new BroadcastChannel('vfx-' + roomCode);
+  if (peerConn) {
+    peerConn.addEventListener('icecandidate', ev => {
+      if (ev.candidate) bc.postMessage({ type: 'ice-performer', candidate: ev.candidate });
+    });
+    const offer = await peerConn.createOffer().catch(() => null);
+    if (offer) bc.postMessage({ type: 'offer', sdp: peerConn.localDescription?.sdp });
+    bc.onmessage = async ev => {
+      const msg = ev.data;
+      if (msg.type === 'answer') {
+        await peerConn.setRemoteDescription(new RTCSessionDescription(msg)).catch(()=>{});
+      } else if (msg.type === 'ice-listener') {
+        await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(()=>{});
+      }
+    };
+  }
+};
+
+/* ─── Init ───────────────────────────────────────────── */
+renderPedals();
+</script>
+</body>
+</html>
