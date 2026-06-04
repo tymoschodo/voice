@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice FX — Listener</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #111118;
+    --border: #2a2a3a;
+    --text: #e8e8f0;
+    --text-muted: #6a6a8a;
+    --text-dim: #3a3a5a;
+    --cyan: #30d0e0;
+    --cyan-dim: #052e33;
+    --green: #22c97a;
+    --red: #f05060;
+    --red-dim: #2e0a10;
+    --mono: 'Space Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  .screen {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  .label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cyan);
+  }
+
+  #status {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 24px;
+    max-width: 360px;
+    line-height: 1.6;
+  }
+
+  /* visualiser bars */
+  #vis {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 80px;
+  }
+
+  .bar {
+    width: 8px;
+    border-radius: 4px;
+    background: var(--cyan);
+    height: 4px;
+    opacity: 0.6;
+    transition: height 0.06s;
+  }
+
+  /* big connect button */
+  #connect-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--cyan-dim);
+    color: var(--cyan);
+    border: 1px solid var(--cyan);
+    border-radius: 6px;
+    padding: 12px 28px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  #connect-btn:hover { background: var(--cyan); color: #000; }
+  #connect-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: middle;
+    transition: background 0.3s;
+  }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .dot.error { background: var(--red); }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  .hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    max-width: 300px;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <div>
+    <div class="label">Voice FX Pedalboard</div>
+    <div class="title" style="margin-top:6px">⬡ Listener</div>
+  </div>
+
+  <div id="vis">
+    <div class="bar" id="b0"></div>
+    <div class="bar" id="b1"></div>
+    <div class="bar" id="b2"></div>
+    <div class="bar" id="b3"></div>
+    <div class="bar" id="b4"></div>
+    <div class="bar" id="b5"></div>
+    <div class="bar" id="b6"></div>
+    <div class="bar" id="b7"></div>
+    <div class="bar" id="b8"></div>
+    <div class="bar" id="b9"></div>
+    <div class="bar" id="b10"></div>
+    <div class="bar" id="b11"></div>
+    <div class="bar" id="b12"></div>
+    <div class="bar" id="b13"></div>
+    <div class="bar" id="b14"></div>
+    <div class="bar" id="b15"></div>
+  </div>
+
+  <div id="status">
+    <span class="dot" id="dot"></span>
+    <span id="status-text">Waiting — press Connect to receive audio</span>
+  </div>
+
+  <button id="connect-btn" onclick="connect()">▶ Connect &amp; play</button>
+
+  <div class="hint">
+    Open index.html on the performer device, start the mic,<br>
+    then go to Stream tab → Start broadcast.<br>
+    This page will receive and play the processed audio.
+  </div>
+</div>
+
+<audio id="audio" autoplay playsinline style="display:none"></audio>
+
+<script>
+const FIXED_ROOM = 'voicefx-live-channel-9x3k';
+const SIG_BASE   = 'wss://socketsbay.com/wss/v2/1/';
+
+let connected = false;
+
+function setStatus(msg, state) {
+  document.getElementById('status-text').textContent = msg;
+  const dot = document.getElementById('dot');
+  dot.className = 'dot' + (state === 'live' ? ' live' : state === 'error' ? ' error' : '');
+}
+
+async function connect() {
+  if (connected) return;
+  connected = true;
+  const btn = document.getElementById('connect-btn');
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  setStatus('Connecting to channel…', '');
+
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+  pc.ontrack = e => {
+    const audio = document.getElementById('audio');
+    audio.srcObject = e.streams[0];
+    audio.play().catch(() => {});
+    setStatus('⬡ Receiving live audio', 'live');
+    btn.textContent = '⬡ Live';
+    startVis(e.streams[0]);
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+      setStatus('Connection lost — reload to retry', 'error');
+      btn.disabled = false; btn.textContent = '↺ Retry';
+      connected = false;
+    }
+  };
+
+  // WebSocket signalling
+  const ws = new WebSocket(SIG_BASE + FIXED_ROOM + '-listener/');
+
+  pc.onicecandidate = ev => {
+    if (ev.candidate && ws.readyState === 1)
+      ws.send(JSON.stringify({ type: 'ice-listener', candidate: ev.candidate }));
+  };
+
+  ws.onmessage = async ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+      setStatus('Offer received — establishing connection…', '');
+    } else if (msg.type === 'ice-performer') {
+      await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+    }
+  };
+
+  ws.onopen = () => setStatus('Channel open — waiting for performer to broadcast…', '');
+  ws.onerror = () => setStatus('WebSocket error — check network', 'error');
+
+  // BroadcastChannel fallback for same-origin tabs
+  const bc = new BroadcastChannel(FIXED_ROOM);
+  pc.addEventListener('icecandidate', ev => {
+    if (ev.candidate) bc.postMessage({ type: 'ice-listener', candidate: ev.candidate });
+  });
+  bc.onmessage = async ev => {
+    const msg = ev.data;
+    if (msg.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      bc.postMessage({ type: 'answer', sdp: answer.sdp });
+    } else if (msg.type === 'ice-performer') {
+      await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+    }
+  };
+}
+
+function startVis(stream) {
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(stream);
+  const an = ctx.createAnalyser(); an.fftSize = 64;
+  src.connect(an);
+  const data = new Uint8Array(an.frequencyBinCount);
+  const bars = Array.from({length: 16}, (_, i) => document.getElementById('b' + i));
+  function tick() {
+    requestAnimationFrame(tick);
+    an.getByteFrequencyData(data);
+    bars.forEach((b, i) => {
+      if (!b) return;
+      const v = (data[Math.floor(i * data.length / 16)] / 255) * 72 + 4;
+      b.style.height = Math.round(v) + 'px';
+    });
+  }
+  tick();
+}
+</script>
+</body>
+</html>

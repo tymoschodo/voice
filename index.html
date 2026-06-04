@@ -428,48 +428,15 @@
 
   <div class="stream-actions">
     <button class="stream-btn primary" onclick="startBroadcast()" id="broadcast-btn">⬡ Start broadcast</button>
-    <button class="stream-btn secondary" onclick="openListenerWindow()">↗ Open listener window</button>
+    <button class="stream-btn secondary" onclick="openListenerWindow()">↗ Open listener.html</button>
   </div>
 
   <div id="broadcast-status" style="font-family:var(--mono);font-size:12px;color:var(--text-muted);margin-bottom:1.5rem;display:none"></div>
 
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px 24px;">
-    <div class="section-label" style="margin-bottom:12px">Join as listener</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-      <input id="room-input" type="text" placeholder="Enter 6-digit room code"
-        style="font-family:var(--mono);font-size:13px;background:var(--bg3);border:1px solid var(--border-bright);border-radius:6px;padding:9px 14px;color:var(--text);outline:none;width:220px;letter-spacing:0.1em"
-        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6)">
-      <button class="stream-btn green" onclick="joinAsListener()">▶ Join as listener</button>
-    </div>
-    <p style="font-size:11px;color:var(--text-dim);margin-top:10px;font-family:var(--mono)">
-      The listener panel opens fullscreen — speaker only, no mic.
-    </p>
-  </div>
-
 </div>
 
 <!-- ═══ LISTENER OVERLAY ════════════════════════════════ -->
-<div id="listener-panel">
-  <div class="listener-title">⬡ Listener mode</div>
-  <div class="listener-sub">Audio-only output. Point speakers outward. No microphone is active on this device.</div>
-  <div id="listener-status">Connecting to room...</div>
-  <div id="listener-vis">
-    <div class="vis-bar" id="vb0"></div>
-    <div class="vis-bar" id="vb1"></div>
-    <div class="vis-bar" id="vb2"></div>
-    <div class="vis-bar" id="vb3"></div>
-    <div class="vis-bar" id="vb4"></div>
-    <div class="vis-bar" id="vb5"></div>
-    <div class="vis-bar" id="vb6"></div>
-    <div class="vis-bar" id="vb7"></div>
-    <div class="vis-bar" id="vb8"></div>
-    <div class="vis-bar" id="vb9"></div>
-    <div class="vis-bar" id="vb10"></div>
-    <div class="vis-bar" id="vb11"></div>
-  </div>
-  <audio id="listener-audio" autoplay playsinline style="display:none"></audio>
-  <button id="listener-close" onclick="closeListener()">✕ Close listener</button>
-</div>
+
 
 <script>
 /* ═══════════════════════════════════════════════════════
@@ -1010,172 +977,71 @@ function buildBinary(gateHz, crushBits, mix) {
 ═══════════════════════════════════════════════════════ */
 
 let peerConn = null;
-let roomCode = null;
 let sigWs = null;
 
-// Simple public signalling via a known relay
-// Uses wss://socketsbay.com/wss/v2/1/<room>/ as a free relay channel
-const SIG_BASE = 'wss://socketsbay.com/wss/v2/1/vfx-';
-
-function genRoomCode() {
-  return Array.from({length: 6}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
-}
+// Fixed room — index.html always broadcasts on this channel,
+// listener.html always listens on it. No codes needed.
+const FIXED_ROOM = 'voicefx-live-channel-9x3k';
+const SIG_BASE = 'wss://socketsbay.com/wss/v2/1/';
 
 async function startBroadcast() {
   if (!processedStream) {
     alert('Start the microphone first (Performer tab → Start button).');
     return;
   }
-  roomCode = genRoomCode();
-  document.getElementById('broadcast-status').style.display = 'block';
-  document.getElementById('broadcast-status').textContent = 'Room code: ' + roomCode + ' — waiting for listener…';
-  document.getElementById('broadcast-btn').textContent = '⬡ Broadcasting: ' + roomCode;
+  if (peerConn) { peerConn.close(); peerConn = null; }
 
-  sigWs = new WebSocket(SIG_BASE + roomCode + '-performer/');
-  sigWs.onopen = () => console.log('Signalling open (broadcaster)');
-  sigWs.onmessage = async (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'answer') {
-      await peerConn.setRemoteDescription(new RTCSessionDescription(msg));
-    } else if (msg.type === 'ice-listener') {
-      try { await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
-    }
-  };
+  document.getElementById('broadcast-status').style.display = 'block';
+  document.getElementById('broadcast-status').textContent = 'Broadcasting on fixed channel — open listener.html on your second device.';
+  document.getElementById('broadcast-btn').textContent = '⬡ Live — broadcasting';
+
+  sigWs = new WebSocket(SIG_BASE + FIXED_ROOM + '-performer/');
 
   peerConn = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
   processedStream.getTracks().forEach(t => peerConn.addTrack(t, processedStream));
 
   peerConn.onicecandidate = e => {
-    if (e.candidate && sigWs.readyState === 1) {
+    if (e.candidate && sigWs.readyState === 1)
       sigWs.send(JSON.stringify({ type: 'ice-performer', candidate: e.candidate }));
-    }
   };
 
-  const offer = await peerConn.createOffer();
-  await peerConn.setLocalDescription(offer);
-  sigWs.onopen = () => sigWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
-  if (sigWs.readyState === 1) sigWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
-}
+  sigWs.onmessage = async ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'answer')
+      await peerConn.setRemoteDescription(new RTCSessionDescription(msg));
+    else if (msg.type === 'ice-listener')
+      await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+  };
 
-async function joinAsListener() {
-  const code = document.getElementById('room-input').value.trim();
-  if (code.length !== 6) { alert('Enter a 6-character room code.'); return; }
-  openListenerMode(code);
+  sigWs.onopen = async () => {
+    const offer = await peerConn.createOffer();
+    await peerConn.setLocalDescription(offer);
+    sigWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+  };
+
+  // BroadcastChannel for same-origin tabs
+  const bc = new BroadcastChannel(FIXED_ROOM);
+  peerConn.addEventListener('icecandidate', ev => {
+    if (ev.candidate) bc.postMessage({ type: 'ice-performer', candidate: ev.candidate });
+  });
+  bc.onmessage = async ev => {
+    const msg = ev.data;
+    if (msg.type === 'answer')
+      await peerConn.setRemoteDescription(new RTCSessionDescription(msg)).catch(() => {});
+    else if (msg.type === 'ice-listener')
+      await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+  };
+  setTimeout(() => {
+    if (peerConn.localDescription)
+      bc.postMessage({ type: 'offer', sdp: peerConn.localDescription.sdp });
+  }, 500);
 }
 
 function openListenerWindow() {
-  const w = window.open(window.location.href + '#listener', '_blank');
-  if (!w) alert('Pop-up blocked — allow pop-ups for this page, or open the file in a second tab manually and use the room code method.');
+  window.open('listener.html', '_blank');
 }
 
-/* ─── Listener overlay ───────────────────────────────── */
-async function openListenerMode(code) {
-  const panel = document.getElementById('listener-panel');
-  panel.classList.add('active');
-  document.getElementById('listener-status').textContent = 'Connecting to room: ' + code + '…';
 
-  const listenerSig = new WebSocket(SIG_BASE + code + '-listener/');
-  const lpc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-
-  lpc.ontrack = e => {
-    const audio = document.getElementById('listener-audio');
-    audio.srcObject = e.streams[0];
-    document.getElementById('listener-status').textContent = '⬡ Receiving audio from room: ' + code;
-    startListenerVis(e.streams[0]);
-  };
-
-  lpc.onicecandidate = ev => {
-    if (ev.candidate && listenerSig.readyState === 1) {
-      listenerSig.send(JSON.stringify({ type: 'ice-listener', candidate: ev.candidate }));
-    }
-  };
-
-  listenerSig.onmessage = async ev => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'offer') {
-      await lpc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
-      const answer = await lpc.createAnswer();
-      await lpc.setLocalDescription(answer);
-      listenerSig.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
-    } else if (msg.type === 'ice-performer') {
-      try { await lpc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
-    }
-  };
-
-  // If same device, use BroadcastChannel as faster fallback
-  const bc = new BroadcastChannel('vfx-' + code);
-  bc.onmessage = async ev => {
-    const msg = ev.data;
-    if (msg.type === 'offer') {
-      await lpc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
-      const answer = await lpc.createAnswer();
-      await lpc.setLocalDescription(answer);
-      bc.postMessage({ type: 'answer', sdp: answer.sdp });
-    } else if (msg.type === 'ice-performer') {
-      try { await lpc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(e){}
-    }
-  };
-}
-
-function startListenerVis(stream) {
-  const ctx = new AudioContext();
-  const src = ctx.createMediaStreamSource(stream);
-  const an = ctx.createAnalyser(); an.fftSize = 64;
-  src.connect(an);
-  const data = new Uint8Array(an.frequencyBinCount);
-  const bars = Array.from({length: 12}, (_, i) => document.getElementById('vb' + i));
-  function tick() {
-    requestAnimationFrame(tick);
-    an.getByteFrequencyData(data);
-    bars.forEach((b, i) => {
-      const v = (data[Math.floor(i * data.length / 12)] / 255) * 56 + 4;
-      b.style.height = Math.round(v) + 'px';
-    });
-  }
-  tick();
-}
-
-function closeListener() {
-  document.getElementById('listener-panel').classList.remove('active');
-  const audio = document.getElementById('listener-audio');
-  if (audio.srcObject) { audio.srcObject.getTracks().forEach(t => t.stop()); audio.srcObject = null; }
-}
-
-/* ─── Hash-based auto-open listener ─────────────────── */
-if (window.location.hash === '#listener') {
-  window.addEventListener('load', () => {
-    document.getElementById('listener-panel').classList.add('active');
-    document.getElementById('listener-status').textContent = 'Enter room code below to connect…';
-    setTimeout(() => {
-      const code = prompt('Enter the 6-character room code from the performer device:');
-      if (code && code.length === 6) openListenerMode(code.toUpperCase());
-    }, 500);
-  });
-}
-
-/* ─── BroadcastChannel enhanced broadcast ───────────── */
-const _origBroadcast = startBroadcast;
-window.startBroadcast = async function() {
-  await _origBroadcast();
-  // also broadcast via BroadcastChannel for same-origin tabs
-  if (!roomCode) return;
-  const bc = new BroadcastChannel('vfx-' + roomCode);
-  if (peerConn) {
-    peerConn.addEventListener('icecandidate', ev => {
-      if (ev.candidate) bc.postMessage({ type: 'ice-performer', candidate: ev.candidate });
-    });
-    const offer = await peerConn.createOffer().catch(() => null);
-    if (offer) bc.postMessage({ type: 'offer', sdp: peerConn.localDescription?.sdp });
-    bc.onmessage = async ev => {
-      const msg = ev.data;
-      if (msg.type === 'answer') {
-        await peerConn.setRemoteDescription(new RTCSessionDescription(msg)).catch(()=>{});
-      } else if (msg.type === 'ice-listener') {
-        await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(()=>{});
-      }
-    };
-  }
-};
 
 /* ─── Init ───────────────────────────────────────────── */
 renderPedals();
