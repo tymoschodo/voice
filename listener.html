@@ -118,8 +118,11 @@ function connect() {
 
   peer.on('open', id => {
     setStatus('Calling performer…', '');
-    // Call the performer with no stream (audio-only receive)
-    const call = peer.call(PERFORMER_ID, new MediaStream());
+    // Create a silent dummy track so PeerJS accepts the call
+    const silentCtx = new AudioContext();
+    const silentDest = silentCtx.createMediaStreamDestination();
+    silentCtx.createOscillator(); // never started — just gives us a valid stream
+    const call = peer.call(PERFORMER_ID, silentDest.stream);
     call.on('stream', stream => {
       const audio = document.getElementById('audio');
       audio.srcObject = stream;

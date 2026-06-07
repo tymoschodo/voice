@@ -1002,8 +1002,8 @@ async function startBroadcast() {
   });
 
   peer.on('call', call => {
-    // Answer with the processed audio stream
     call.answer(processedStream);
+    call.on('stream', () => {}); // required by some browsers to complete handshake
     document.getElementById('broadcast-status').textContent = '⬡ Listener connected!';
   });
 
