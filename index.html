@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Voice FX Pedalboard</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
 
@@ -969,72 +970,55 @@ function buildBinary(gateHz, crushBits, mix) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   WEBRTC STREAMING
-   Uses a public STUN server + a simple BroadcastChannel
-   for same-origin (same-device) signalling, and a basic
-   WebSocket relay (public echo service) for cross-device.
-   For production use, replace with your own signalling server.
+   WEBRTC STREAMING via PeerJS
+   Fixed peer ID — performer is always 'voicefx-performer',
+   listener.html always calls that ID. No room codes needed.
 ═══════════════════════════════════════════════════════ */
 
-let peerConn = null;
-let sigWs = null;
-
-// Fixed room — index.html always broadcasts on this channel,
-// listener.html always listens on it. No codes needed.
-const FIXED_ROOM = 'voicefx-live-channel-9x3k';
-const SIG_BASE = 'wss://socketsbay.com/wss/v2/1/';
+const PERFORMER_ID = 'voicefx-performer-9x3k';
+let peer = null;
 
 async function startBroadcast() {
+  // Auto-start mic if not already running
   if (!processedStream) {
-    alert('Start the microphone first (Performer tab → Start button).');
-    return;
+    await initAudio();
+    if (!processedStream) return;
   }
-  if (peerConn) { peerConn.close(); peerConn = null; }
+
+  // Destroy any existing peer
+  if (peer) { peer.destroy(); peer = null; }
 
   document.getElementById('broadcast-status').style.display = 'block';
-  document.getElementById('broadcast-status').textContent = 'Broadcasting on fixed channel — open listener.html on your second device.';
-  document.getElementById('broadcast-btn').textContent = '⬡ Live — broadcasting';
+  document.getElementById('broadcast-status').textContent = 'Starting broadcast…';
+  document.getElementById('broadcast-btn').textContent = '⬡ Starting…';
+  document.getElementById('broadcast-btn').disabled = true;
 
-  sigWs = new WebSocket(SIG_BASE + FIXED_ROOM + '-performer/');
+  peer = new Peer(PERFORMER_ID, { debug: 0 });
 
-  peerConn = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-  processedStream.getTracks().forEach(t => peerConn.addTrack(t, processedStream));
-
-  peerConn.onicecandidate = e => {
-    if (e.candidate && sigWs.readyState === 1)
-      sigWs.send(JSON.stringify({ type: 'ice-performer', candidate: e.candidate }));
-  };
-
-  sigWs.onmessage = async ev => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'answer')
-      await peerConn.setRemoteDescription(new RTCSessionDescription(msg));
-    else if (msg.type === 'ice-listener')
-      await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
-  };
-
-  sigWs.onopen = async () => {
-    const offer = await peerConn.createOffer();
-    await peerConn.setLocalDescription(offer);
-    sigWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
-  };
-
-  // BroadcastChannel for same-origin tabs
-  const bc = new BroadcastChannel(FIXED_ROOM);
-  peerConn.addEventListener('icecandidate', ev => {
-    if (ev.candidate) bc.postMessage({ type: 'ice-performer', candidate: ev.candidate });
+  peer.on('open', id => {
+    document.getElementById('broadcast-status').textContent = 'Broadcasting — open listener.html on your second device.';
+    document.getElementById('broadcast-btn').textContent = '⬡ Live — broadcasting';
+    document.getElementById('broadcast-btn').disabled = false;
   });
-  bc.onmessage = async ev => {
-    const msg = ev.data;
-    if (msg.type === 'answer')
-      await peerConn.setRemoteDescription(new RTCSessionDescription(msg)).catch(() => {});
-    else if (msg.type === 'ice-listener')
-      await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
-  };
-  setTimeout(() => {
-    if (peerConn.localDescription)
-      bc.postMessage({ type: 'offer', sdp: peerConn.localDescription.sdp });
-  }, 500);
+
+  peer.on('call', call => {
+    // Answer with the processed audio stream
+    call.answer(processedStream);
+    document.getElementById('broadcast-status').textContent = '⬡ Listener connected!';
+  });
+
+  peer.on('error', err => {
+    // ID taken means another broadcaster is already running — retry with destroy
+    if (err.type === 'unavailable-id') {
+      document.getElementById('broadcast-status').textContent = 'Reconnecting…';
+      peer.destroy();
+      setTimeout(startBroadcast, 1500);
+    } else {
+      document.getElementById('broadcast-status').textContent = 'Error: ' + err.message;
+      document.getElementById('broadcast-btn').textContent = '⬡ Start broadcast';
+      document.getElementById('broadcast-btn').disabled = false;
+    }
+  });
 }
 
 function openListenerWindow() {
